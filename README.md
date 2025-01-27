@@ -3,7 +3,7 @@ Code for the paper:
 
 This repository contains code and resources related to the WHO-PEN@Scale project, a nationwide cluster-randomized controlled trial in Eswatini. The study utilized data from a nationwide household survey conducted as part of the WHO-PEN@Scale initiative (https://whopenatscale.com/).
 
-The full study protocol for this trial is available here.
+The full study protocol for this trial is available here: https://ntnuopen.ntnu.no/ntnu-xmlui/bitstream/handle/11250/3097328/Theilmann.pdf?sequence=2&isAllowed=y.
 
     Data Cleaning: Performed using STATA.
     Data Management and Analysis: Conducted in R (version 4.1.2, released 2021-11-01).
