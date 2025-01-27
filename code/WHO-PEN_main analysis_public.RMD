@@ -1,0 +1,1303 @@
+---
+title: "WHO-PEN_main analysis_public"
+author: "Lisa Stehr"
+date: "1/27/2025"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+# add required libraries
+library(tidyverse)
+library(readxl)
+library(openxlsx)
+library(writexl)
+library(summarytools)
+library(finalfit)
+library(table1)
+library(freqtables)
+library(sandwich)
+library(lmtest)
+library(haven)
+
+# load in dataset
+indiv <- haven::read_dta("C:/Users/lisa.stehr/Desktop/WHO-PEN/13_Data/Publications/1_main analysis/submission/2_Nature Medicine/Revision 2/indiv.dta")
+
+```
+
+```{r restrictions and generate control vars}
+
+# restrict to hypertensives and diabetics
+indiv <- indiv %>% 
+  filter(clin_dm == 1 | clin_htn == 1)
+
+# Generate hypertension control
+indiv <- indiv %>% 
+  mutate(h_contr = ifelse(clin_htn == 1 & highbp == 0, 1,
+                          ifelse(clin_htn == 1 & highbp == 1, 0, NA)))
+
+# Generate diabetis control
+indiv <- indiv %>% 
+  mutate(dm_contr = ifelse(clin_dm == 1 & highhba1c == 0, 1,
+                           ifelse(clin_dm == 1 & highhba1c == 1, 0,NA)))
+
+
+
+
+```
+
+## Descriptive results
+
+```{r table 1}
+
+# Create working variable (working vs. not working)
+indiv <- indiv %>%
+  mutate(working = ifelse(temp_work < 1 | temp_work > 4, 0, 1))
+
+# create factor levels for study arms
+indiv$arm_fct <- 
+  factor(indiv$arm, 
+         levels=c("SoC","CCD","DSD"),
+         labels=c("SoC", # Reference
+                  "CDP", 
+                  "DSD"))
+# sex 
+indiv$female2 <- 
+  factor(indiv$female, levels=c(1,0),
+         labels=c("Female", 
+                  "Male"))
+label(indiv$female2)<- "Sex"
+
+# working 
+indiv$working <- 
+  factor(indiv$working, levels=c(1,0),
+         labels=c("Working", 
+                  "Not working"))
+label(indiv$female2)<- "Currently working"
+
+# create table
+result <- table1(~ factor(female2) + age + factor(marital) + factor(educ) + factor(working) + factor(work)| arm_fct, data=indiv)
+result_df <- as.data.frame(result)
+
+# check if randomization worked
+# perform t-test and CHI2 test
+binary_variables <- c("female", "working")  # List of binary variables
+categorical_variables <- c("educ", "marital")  # List of categorical variables
+continuous_variables <- c("age")
+
+anova_results <- lapply(continuous_variables, function(var) {
+  aov(indiv[[var]] ~ indiv$arm, data = indiv)
+})
+
+# Print t-test results
+print(t_test_results)
+
+# Print Chi-square test results
+print(chi_square_results)
+
+# Extract the aov object from the list
+anova_result <- anova_results[[1]]
+
+# Obtain the summary of the ANOVA result
+anova_summary <- summary(anova_result)
+
+# Print the summary
+print(anova_summary)
+
+# Create a contingency table for the binary variable and treatment arm
+contingency_table <- table(indiv$educ, indiv$arm)
+
+# Perform the Chi-Square Test for Independence
+chi_square_result <- chisq.test(contingency_table)
+print(chi_square_result)
+
+# working
+contingency_table <- table(indiv$educ, indiv$female)
+
+# Perform the Chi-Square Test for Independence
+chi_square_result <- chisq.test(contingency_table)
+print(chi_square_result)
+
+```
+
+```{r prevalences}
+
+# remove group_by argument to get prevalence for total sample
+
+# Define alpha for the confidence level (e.g., 0.05 for 95% CI)
+alpha <- 0.05
+
+############################################################################################################################################
+################################################################### HYPERTENSION ###########################################################
+############################################################################################################################################
+
+# mean_sbp_avg
+mean_sbp_avg_arm <- indiv %>% 
+    filter(clin_htn == 1) %>% 
+    filter(is.na(sbp_avg)==F) %>%
+    group_by(arm) %>% 
+    summarize(n = n(),
+              mean_sbp_avg = mean(sbp_avg, na.rm = TRUE),
+              sd_sbp_avg = sd(sbp_avg, na.rm = TRUE),
+              lower = mean(sbp_avg) - qt(1- alpha/2, (n() - 1))*sd(sbp_avg)/sqrt(n()),
+              upper  = mean(sbp_avg) + qt(1- alpha/2, (n() - 1))*sd(sbp_avg)/sqrt(n())) %>%
+  mutate_if(is.numeric, round, digits=1) %>%
+  mutate(mean_sbp_avg_ci = paste(mean_sbp_avg, " (", lower, "-", upper, ")", sep = ""))%>%
+  select(arm, sd_sbp_avg, mean_sbp_avg_ci)
+
+# mean dbp_avg
+mean_dbp_avg_arm <- indiv %>% 
+    filter(clin_htn == 1) %>% 
+    filter(is.na(dbp_avg)==F) %>%
+    group_by(arm) %>%
+    summarize(n = n(),
+              mean_dbp_avg = mean(dbp_avg, na.rm = TRUE),
+              sd_dbp_avg = sd(dbp_avg, na.rm = TRUE),
+              lower = mean(dbp_avg) - qt(1- alpha/2, (n() - 1))*sd(dbp_avg)/sqrt(n()),
+              upper  = mean(dbp_avg) + qt(1- alpha/2, (n() - 1))*sd(dbp_avg)/sqrt(n())) %>%
+  mutate_if(is.numeric, round, digits=1) %>%
+  mutate(mean_dbp_avg_ci = paste(mean_dbp_avg, " (", lower, "-", upper, ")", sep = ""))%>%
+  select(arm, sd_dbp_avg, mean_dbp_avg_ci)
+
+# htn control 
+mean_h_contr_arm <- indiv %>% 
+    filter(clin_htn == 1) %>% 
+    filter(is.na(h_contr)==F) %>%
+    group_by(arm) %>% 
+    summarize(    n = n(),
+                  mean_h_contr = mean(h_contr, na.rm = TRUE),
+              lower = mean(h_contr) - qt(1- alpha/2, (n() - 1))*sd(h_contr)/sqrt(n()),
+              upper = mean(h_contr) + qt(1- alpha/2, (n() - 1))*sd(h_contr)/sqrt(n())) %>%
+  mutate_if(is.numeric, round, digits=3)%>%
+  mutate_if(is.numeric, ~ . * 100) %>%
+  mutate(mean_h_contr_ci = paste(mean_h_contr, " (", lower, "-", upper, ")", sep = ""))%>%
+  select(arm, mean_h_contr_ci)
+
+############################################################################################################################################
+################################################################### DIABETES ###############################################################
+############################################################################################################################################
+
+# hba1c
+mean_hba1c_byarm <- indiv_dm %>% 
+    filter(clin_dm == 1) %>% 
+    filter(is.na(hba1c)==F) %>%
+    group_by(arm) %>% 
+    summarize(    n = n(),
+                  mean_hba1c = mean(hba1c, na.rm = TRUE),
+                  sd_hba1c = sd(hba1c, na.rm = TRUE),
+              lower = mean(hba1c) - qt(1- alpha/2, (n() - 1))*sd(hba1c)/sqrt(n()),
+              upper  = mean(hba1c) + qt(1- alpha/2, (n() - 1))*sd(hba1c)/sqrt(n())) %>%
+  mutate_if(is.numeric, round, digits=1) %>%
+  mutate(mean_hba1c_ci = paste(mean_hba1c, " (", lower, "-", upper, ")", sep = "")) %>%
+  select(arm, sd_hba1c, mean_hba1c_ci)
+
+# hba1c control 
+mean_dm_contr_byarm <- indiv_dm %>% 
+    filter(clin_dm == 1) %>% 
+    filter(is.na(dm_contr)==F) %>%
+    group_by(arm) %>% 
+    summarize(    n = n(),
+                  mean_dm_contr = mean(dm_contr, na.rm = TRUE),
+              lower = mean(dm_contr) - qt(1- alpha/2, (n() - 1))*sd(dm_contr)/sqrt(n()),
+              upper = mean(dm_contr) + qt(1- alpha/2, (n() - 1))*sd(dm_contr)/sqrt(n())) %>%
+  mutate_if(is.numeric, round, digits=3)%>%
+  mutate_if(is.numeric, ~ . * 100) %>%
+  mutate(mean_dm_contr_ci = paste(mean_dm_contr, " (", lower, "-", upper, ")", sep = "")) %>%
+  select(arm, mean_dm_contr_ci)
+
+```
+
+## Intention-to-treat analysis
+
+```{r ITT: Hypertension}
+
+# create var for study arm assignment
+indiv_htn <- indiv %>%
+  mutate(dsd_assign = ifelse(arm=='DSD', 1, 0)) %>%
+  mutate(cdp_assign = ifelse(arm=='CCD', 1, 0)) %>%
+  mutate(soc_assign = ifelse(arm=='SoC', 1, 0)) %>%
+  mutate(any_assign = ifelse(dsd_assign==1 | cdp_assign==1, 1, 0)) %>% #4617
+  filter(clin_htn == 1) #3570
+
+#strata <- model.matrix(~ region - 1, data = indiv_htn)
+
+###################################################################################################################################
+#######################################  PRIMARY OUTCOME: systolic blood pressure levels  #########################################
+###################################################################################################################################
+
+# A: pooled treatment effect
+# define unadjusted model 
+model <- lm(sbp_avg ~ any_assign + strata, data = indiv_htn)
+summary(model)$r.squared #0.002475854
+clustered_se <- vcovCL(model, cluster = indiv_htn$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+cl.htn.pool.unadj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.htn.pool.unadj$RowNames <- rownames(cl.htn.pool.unadj) 
+cl.htn.pool.unadj <- cl.htn.pool.unadj%>%
+  select(RowNames, everything())
+
+#msummary(list(model))
+
+write.xlsx(cl.htn.pool.unadj, "cl.htn.pool.unadj.xlsx")
+
+# define adjusted model
+model <- lm(sbp_avg ~ any_assign + strata + female + educ + age, data = indiv_htn)
+summary(model)$r.squared #0.0166302
+clustered_se <- vcovCL(model, cluster = indiv_htn$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+cl.htn.pool.adj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.htn.pool.adj$RowNames <- rownames(cl.htn.pool.adj) 
+cl.htn.pool.adj <- cl.htn.pool.adj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.htn.pool.adj, "cl.htn.pool.adj.xlsx")
+
+### B: unpooled treatment effect
+# define unadjusted model 
+model <- lm(sbp_avg ~ dsd_assign + cdp_assign+ strata, data = indiv_htn)
+summary(model)$r.squared #
+clustered_se <- vcovCL(model, cluster = indiv_htn$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+cl.htn.unpool.unadj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.htn.unpool.unadj$RowNames <- rownames(cl.htn.unpool.unadj) 
+cl.htn.unpool.unadj <- cl.htn.unpool.unadj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.htn.unpool.unadj, "cl.htn.unpool.unadj.xlsx")
+
+# define adjusted model
+model <- lm(sbp_avg ~ dsd_assign + cdp_assign + strata + female + educ + age, data = indiv_htn)
+summary(model)$r.squared
+clustered_se <- vcovCL(model, cluster = indiv_htn$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+cl.htn.unpool.adj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.htn.unpool.adj$RowNames <- rownames(cl.htn.unpool.adj) 
+cl.htn.unpool.adj <- cl.htn.unpool.adj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.htn.unpool.adj, "cl.htn.unpool.adj.xlsx")
+
+###################################################################################################################################
+####################################### SECONDARY OUTCOME: diastolic blood pressure ###############################################
+###################################################################################################################################
+
+# A: pooled treatment effect
+# define unadjusted model 
+model <- lm(dbp_avg ~ any_assign + strata, data = indiv_htn)
+summary(model)$r.squared #0.0003180551
+clustered_se <- vcovCL(model, cluster = indiv_htn$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+cl.htn.dbp.pool.unadj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.htn.dbp.pool.unadj$RowNames <- rownames(cl.htn.dbp.pool.unadj) 
+cl.htn.dbp.pool.unadj <- cl.htn.dbp.pool.unadj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.htn.dbp.pool.unadj, "cl.htn.dbp.pool.unadj.xlsx")
+
+# define adjusted model
+model <- lm(dbp_avg ~ any_assign + strata + female + educ + age, data = indiv_htn)
+summary(model)$r.squared #0.05981847
+clustered_se <- vcovCL(model, cluster = indiv_htn$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+cl.htn.dbp.pool.adj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.htn.dbp.pool.adj$RowNames <- rownames(cl.htn.dbp.pool.adj) 
+cl.htn.dbp.pool.adj <- cl.htn.dbp.pool.adj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.htn.dbp.pool.adj, "cl.htn.dbp.pool.adj.xlsx")
+
+### B: unpooled treatment effect
+# define unadjusted model 
+model <- lm(dbp_avg ~ dsd_assign + cdp_assign + strata, data = indiv_htn)
+summary(model)$r.squared #
+clustered_se <- vcovCL(model, cluster = indiv_htn$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+cl.htn.dbp.unpool.unadj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.htn.dbp.unpool.unadj$RowNames <- rownames(cl.htn.dbp.unpool.unadj) 
+cl.htn.dbp.unpool.unadj <- cl.htn.dbp.unpool.unadj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.htn.dbp.unpool.unadj, "cl.htn.dbp.unpool.unadj.xlsx")
+
+# define adjusted model
+model <- lm(dbp_avg ~ dsd_assign + cdp_assign + strata + female + educ + age, data = indiv_htn)
+summary(model)$r.squared #0.06027673
+clustered_se <- vcovCL(model, cluster = indiv_htn$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+cl.htn.dbp.unpool.adj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.htn.dbp.unpool.adj$RowNames <- rownames(cl.htn.dbp.unpool.adj) 
+cl.htn.dbp.unpool.adj <- cl.htn.dbp.unpool.adj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.htn.dbp.unpool.adj, "cl.htn.dbp.unpool.adj.xlsx")
+
+###################################################################################################################################
+####################################### SECONDARY OUTCOME: blood pressure control #################################################
+###################################################################################################################################
+
+# define unadjusted model
+model <- glm(h_contr ~ any_assign + strata, data = indiv_htn, family = poisson(link = "log"))
+summary(model)$r.squared
+clustered_se <- vcovCL(model, cluster = indiv_htn$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+#exponentiate to get risk ratios
+coefficients_table$Estimate <- exp(coefficients_table$Estimate)
+coefficients_table$"2.5 %" <- exp(coefficients_table$"2.5 %")
+coefficients_table$"97.5 %" <- exp(coefficients_table$"97.5 %")
+
+cl.htn.ctrl.pool.unadj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.htn.ctrl.pool.unadj$RowNames <- rownames(cl.htn.ctrl.pool.unadj) 
+cl.htn.ctrl.pool.unadj <- cl.htn.ctrl.pool.unadj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.htn.ctrl.pool.unadj, "cl.htn.ctrl.pool.unadj.xlsx")
+
+# define adjusted model
+model <- glm(h_contr ~ any_assign + strata + female + educ + age, data = indiv_htn, family = poisson(link = "log"))
+summary(model)$r.squared
+clustered_se <- vcovCL(model, cluster = indiv_htn$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+#exponentiate to get risk ratios
+coefficients_table$Estimate <- exp(coefficients_table$Estimate)
+coefficients_table$"2.5 %" <- exp(coefficients_table$"2.5 %")
+coefficients_table$"97.5 %" <- exp(coefficients_table$"97.5 %")
+
+cl.htn.ctrl.pool.adj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.htn.ctrl.pool.adj$RowNames <- rownames(cl.htn.ctrl.pool.adj) 
+cl.htn.ctrl.pool.adj <- cl.htn.ctrl.pool.adj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.htn.ctrl.pool.adj, "cl.htn.ctrl.pool.adj.xlsx")
+
+###
+### B: unpooled treatment effect
+###
+
+# define unadjusted model
+model <- glm(h_contr ~ dsd_assign  + cdp_assign + strata, data = indiv_htn, family = poisson(link = "log"))
+#model <- glm(h_contr ~ dsd_assign  + cdp_assign + strata, data = indiv_htn, family = binomial)
+summary(model)$r.squared
+clustered_se <- vcovCL(model, cluster = indiv_htn$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+#exponentiate to get risk ratios
+coefficients_table$Estimate <- exp(coefficients_table$Estimate)
+coefficients_table$"2.5 %" <- exp(coefficients_table$"2.5 %")
+coefficients_table$"97.5 %" <- exp(coefficients_table$"97.5 %")
+
+cl.htn.ctrl.unpool.unadj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.htn.ctrl.unpool.unadj$RowNames <- rownames(cl.htn.ctrl.unpool.unadj) 
+cl.htn.ctrl.unpool.unadj <- cl.htn.ctrl.unpool.unadj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.htn.ctrl.unpool.unadj, "cl.htn.ctrl.unpool.unadj.xlsx")
+
+# define adjusted model
+model <- glm(h_contr ~ dsd_assign + cdp_assign + strata + female + educ + age, data = indiv_htn, family = poisson(link = "log"))
+#model <- glm(h_contr ~ dsd_assign + cdp_assign + strata + female + educ + age, data = indiv_htn, family = binomial)
+clustered_se <- vcovCL(model, cluster = indiv_htn$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+#exponentiate to get risk ratios
+coefficients_table$Estimate <- exp(coefficients_table$Estimate)
+coefficients_table$"2.5 %" <- exp(coefficients_table$"2.5 %")
+coefficients_table$"97.5 %" <- exp(coefficients_table$"97.5 %")
+
+cl.htn.ctrl.unpool.adj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.htn.ctrl.unpool.adj$RowNames <- rownames(cl.htn.ctrl.unpool.adj) 
+cl.htn.ctrl.unpool.adj <- cl.htn.ctrl.unpool.adj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.htn.ctrl.unpool.adj, "cl.htn.ctrl.unpool.adj.xlsx")
+
+
+
+```
+
+```{r ITT Diabetes}
+
+# create var for study arm assignment
+indiv_dm <- indiv %>%
+  mutate(dsd_assign = ifelse(arm=='DSD', 1, 0)) %>%
+  mutate(cdp_assign = ifelse(arm=='CCD', 1, 0)) %>%
+  mutate(soc_assign = ifelse(arm=='SoC', 1, 0)) %>%
+  mutate(any_assign = ifelse(dsd_assign==1 | cdp_assign==1, 1, 0)) %>%
+  filter(clin_dm == 1) #1063
+
+#add region strata as fixed effects
+#strata <- model.matrix(~ region - 1, data = indiv_dm)
+
+###################################################################################################################################
+#######################################  PRIMARY OUTCOME: HBA1C LEVEL  ############################################################
+###################################################################################################################################
+
+# Primary analysis: OLS regression with clustering and covariate adjustment
+# A: pooled treatment effect, 
+model <- lm(hba1c ~ any_assign + strata, data = indiv_dm)
+clustered_se <- vcovCL(model, cluster = indiv_dm$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+coefficients_table <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) 
+
+cl.dm.hba1c.pool.unadj <- coefficients_table %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', '2.5 %', '97.5 %', P_Value)
+cl.dm.hba1c.pool.unadj$RowNames <- rownames(cl.dm.hba1c.pool.unadj) 
+cl.dm.hba1c.pool.unadj <- cl.dm.hba1c.pool.unadj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.dm.hba1c.pool.unadj, "cl.dm.hba1c.pool.unadj.xlsx")
+
+# define adjusted model
+model <- lm(hba1c ~ any_assign + strata + female + educ + age, data = indiv_dm)
+clustered_se <- vcovCL(model, cluster = indiv_dm$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+cl.dm.hba1c.pool.adj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.dm.hba1c.pool.adj$RowNames <- rownames(cl.dm.hba1c.pool.adj) 
+cl.dm.hba1c.pool.adj <- cl.dm.hba1c.pool.adj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.dm.hba1c.pool.adj, "cl.dm.hba1c.pool.adj.xlsx")
+
+# unadjusted
+model <- lm(hba1c ~ dsd_assign + cdp_assign + strata, data = indiv_dm)
+clustered_se <- vcovCL(model, cluster = indiv_dm$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+cl.dm.hba1c.unpool.unadj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.dm.hba1c.unpool.unadj$RowNames <- rownames(cl.dm.hba1c.unpool.unadj) 
+cl.dm.hba1c.unpool.unadj <- cl.dm.hba1c.unpool.unadj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.dm.hba1c.unpool.unadj, "cl.dm.hba1c.unpool.unadj.xlsx")
+
+# adjusted
+model <- lm(hba1c ~ dsd_assign + cdp_assign + strata + female + educ + age, data = indiv_dm)
+clustered_se <- vcovCL(model, cluster = indiv_dm$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+cl.dm.hba1c.unpool.adj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.dm.hba1c.unpool.adj$RowNames <- rownames(cl.dm.hba1c.unpool.adj) 
+cl.dm.hba1c.unpool.adj <- cl.dm.hba1c.unpool.adj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.dm.hba1c.unpool.adj, "cl.dm.hba1c.unpool.adj.xlsx")
+
+
+###################################################################################################################################
+#######################################  SECONDARY OUTCOME: HBA1C CONTROL  ########################################################
+###################################################################################################################################
+
+# hba1c control is binary (y/n) 
+
+# A: pooled treatment effect
+# define unadjusted model 
+model <- glm(dm_contr ~ any_assign + strata, data = indiv_dm, family = poisson(link = "log"))
+clustered_se <- vcovCL(model, cluster = indiv_dm$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+#exponentiate to get risk ratios
+coefficients_table$Estimate <- exp(coefficients_table$Estimate)
+coefficients_table$"2.5 %" <- exp(coefficients_table$"2.5 %")
+coefficients_table$"97.5 %" <- exp(coefficients_table$"97.5 %")
+
+cl.dm.ctrl.pool.unadj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.dm.ctrl.pool.unadj$RowNames <- rownames(cl.dm.ctrl.pool.unadj) 
+cl.dm.ctrl.pool.unadj <- cl.dm.ctrl.pool.unadj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.dm.ctrl.pool.unadj, "cl.dm.ctrl.pool.unadj.xlsx")
+
+# define adjusted model
+model <- glm(dm_contr ~ any_assign+ strata + female + educ + age, data = indiv_dm, family = poisson(link = "log"))
+#model <- glm(dm_contr ~ any_assign+ strata + female + educ + age, data = indiv_dm, family = binomial)
+clustered_se <- vcovCL(model, cluster = indiv_dm$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+#exponentiate to get risk ratios
+coefficients_table$Estimate <- exp(coefficients_table$Estimate)
+coefficients_table$"2.5 %" <- exp(coefficients_table$"2.5 %")
+coefficients_table$"97.5 %" <- exp(coefficients_table$"97.5 %")
+
+cl.dm.ctrl.pool.adj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.dm.ctrl.pool.adj$RowNames <- rownames(cl.dm.ctrl.pool.adj) 
+cl.dm.ctrl.pool.adj <- cl.dm.ctrl.pool.adj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.dm.ctrl.pool.adj, "cl.dm.ctrl.pool.adj.xlsx")
+
+# B: unpooled
+# unadjusted
+model <- glm(dm_contr ~ dsd_assign + cdp_assign + strata, data = indiv_dm, family = poisson(link = "log"))
+#model <- glm(dm_contr ~ dsd_assign + cdp_assign + strata, data = indiv_dm, family = binomial)
+clustered_se <- vcovCL(model, cluster = indiv_dm$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+#exponentiate to get risk ratios
+coefficients_table$Estimate <- exp(coefficients_table$Estimate)
+coefficients_table$"2.5 %" <- exp(coefficients_table$"2.5 %")
+coefficients_table$"97.5 %" <- exp(coefficients_table$"97.5 %")
+
+cl.dm.ctrl.unpool.unadj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.dm.ctrl.unpool.unadj$RowNames <- rownames(cl.dm.ctrl.unpool.unadj) 
+cl.dm.ctrl.unpool.unadj <- cl.dm.ctrl.unpool.unadj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.dm.ctrl.unpool.unadj, "cl.dm.ctrl.unpool.unadj.xlsx")
+
+# adjusted
+model <- glm(dm_contr ~ dsd_assign + cdp_assign + strata + female + educ + age, data = indiv_dm, family = poisson(link = "log"))
+#model <- glm(dm_contr ~ dsd_assign + cdp_assign + strata + female + educ + age, data = indiv_dm, family = binomial)
+clustered_se <- vcovCL(model, cluster = indiv_dm$rhmclinic)
+# define output
+coeftest_output <- coeftest(model, vcov = clustered_se)
+conf_intervals <- confint(coeftest_output)
+
+coefficients_table<- cbind(coeftest_output, conf_intervals) %>% 
+  as.data.frame()
+#exponentiate to get risk ratios
+coefficients_table$Estimate <- exp(coefficients_table$Estimate)
+coefficients_table$"2.5 %" <- exp(coefficients_table$"2.5 %")
+coefficients_table$"97.5 %" <- exp(coefficients_table$"97.5 %")
+
+cl.dm.ctrl.unpool.adj <- coefficients_table %>%
+  mutate(Estimate_CI = paste(
+    round(coefficients_table[, 1], 2),
+    " (",
+    round(coefficients_table[, 5], 2),
+    " - ",
+    round(coefficients_table[, 6], 2),
+    ")",
+    sep = ""),
+  P_Value = round(coefficients_table[, 4], 3)) %>%
+  select(Estimate_CI, Estimate, '2.5 %', '97.5 %', P_Value)
+cl.dm.ctrl.unpool.adj$RowNames <- rownames(cl.dm.ctrl.unpool.adj) 
+cl.dm.ctrl.unpool.adj <- cl.dm.ctrl.unpool.adj%>%
+  select(RowNames, everything())
+
+write.xlsx(cl.dm.ctrl.unpool.adj, "cl.dm.ctrl.unpool.adj.xlsx")
+
+
+```
+
+```{r ITT result figure}
+
+### I put together the regression results manually in excel (pooled, adjusted only) so that they fit the format required for the figure
+
+Combined_pooled_adj <- read_excel("C:/Users/lisa.stehr/Desktop/WHO-PEN/8_Surveys & Monitoring/Household survey 1/Regression results/withCI/Combined_pooled_adj.xlsx")
+
+Combined_pooled_adj$variable <- factor(Combined_pooled_adj$variable, levels = rev(c("HbA1c (%)", "Diabetes control", "Systolic BP (mm Hg)", "Diastolic BP (mm Hg)", "Hypertension control")))
+
+# make two separate figures, one for continous, one for binary vars
+Combined_pooled_adj_binary <- Combined_pooled_adj %>%
+  filter(variable=="Diabetes control" | variable=="Hypertension control")
+
+# create figure for binary outcomes
+Regression.fig.binary <- ggplot(Combined_pooled_adj_binary, aes(x = as.numeric(Estimate), y = variable)) + 
+  geom_vline(aes(xintercept = 1), size = 1, linetype = "dashed", color = "darkred") + 
+  geom_errorbarh(aes(xmax = upper, xmin = lower), size = .5, height = .2, color = "gray50") +
+  geom_point(size = 4, color = "darkgreen") +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 35, family = "serif"),
+    axis.title = element_text(size = 35, face = "bold", family = "serif"),
+    axis.title.y = element_text(margin = margin(r = 20)),
+    strip.text.x = element_text(size = 35, face = "bold", family = "serif"),
+    strip.background = element_blank(),
+    panel.spacing = unit(2, "lines"),
+    legend.position = "none",
+    plot.title = element_text(size = 35, face = "bold")
+  ) + 
+  ylab("") +
+  xlab("Risk Ratio")
+
+cairo_pdf("Regression_Fig_Binary.pdf", width = 10, height = 8)
+print(Regression.fig.binary)
+dev.off()
+
+# create figure for continous outcomes
+Combined_pooled_adj_contin <- Combined_pooled_adj %>%
+  filter(variable!="Diabetes control" & variable!="Hypertension control")
+
+Regression.fig.contin <- ggplot(Combined_pooled_adj_contin, aes(x = as.numeric(Estimate), y = variable)) + 
+  geom_vline(aes(xintercept = 0), size = 1, linetype = "dashed", color = "darkred") + 
+  geom_errorbarh(aes(xmax = upper, xmin = lower), size = 1, height = .2, color = "gray50") +
+  geom_point(size = 3.5, color = "darkgreen") +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 35, family = "Times New Roman"),
+    axis.title = element_text(size = 35, face = "bold", family = "Times New Roman"),
+    axis.title.x = element_text(margin = margin(t = 20)),
+    strip.text.x = element_text(size = 35, face = "bold", family = "Times New Roman"),
+    strip.background = element_blank(),
+    panel.spacing = unit(2, "lines"),
+    legend.position = "none",
+    plot.title = element_text(size = 35, face = "bold")
+  ) + 
+  ylab("") +
+  xlab("β-coefficient") 
+
+cairo_pdf("Regression.fig.contin.pdf", width = 10, height = 8)
+print(Regression.fig.contin)
+dev.off()
+
+```
+
+## health service uptake
+
+```{r create two datasets by disease}
+
+indiv_dm <- indiv %>%
+  filter(clin_dm == 1)
+
+indiv_htn <- indiv %>%
+  filter(clin_htn == 1) #3570
+
+```
+
+```{r diagnosis in past 12 m}
+
+#hd7an: You said before that you have been told by a doctor or healthcare worker that you have high blood sugar/diabetes. Have you been told for the first time in the past 12 months? 
+
+hd7an_dm <- indiv_dm %>%
+  mutate(hd7an = as.numeric(hd7an)) %>%
+  summarize(mean_diagn_dm = round(mean(hd7an, na.rm = TRUE) * 100, 1))
+
+hd7an_htn <- indiv_htn %>%
+  mutate(hd7an = as.numeric(hd7an)) %>%
+  summarize(mean_diagn_dm = round(mean(hd7an, na.rm = TRUE) * 100, 1))
+
+```
+
+```{r med use in past 2 weeks}
+
+#hd3: In the past two weeks, have you taken any drugs (medication) for diabetes prescribed by a doctor or other health worker?
+dm.med <- indiv_dm %>%
+  group_by(assign_n) %>%
+  mutate(dm_anymed = as.numeric(dm_anymed)) %>%
+  summarize(mean_diagn_dm = round(mean(dm_anymed, na.rm = TRUE) * 100, 1))
+
+htn.med <- indiv_htn %>%
+ # group_by(assign_n) %>%
+  mutate(htn_med = as.numeric(h_med)) %>%
+  summarize(mean_diagn_htn = round(mean(htn_med, na.rm = TRUE) * 100, 1))
+
+#dm_adh2
+dm_adh2 <- indiv_dm %>%
+  group_by(assign_n) %>%
+  mutate(dm_adh2 = as.numeric(dm_adh2)) %>%
+  summarize(mean_diagn_dm = round(mean(dm_adh2, na.rm = TRUE) * 100, 1))
+
+#h_adh_pay: Missed dose in past 2 weeks - Why did you miss one or more doses over the past 2 weeks? It is hard to pay for this drug
+htn_h_adh_pay <- indiv_htn %>%
+ # group_by(assign_n) %>%
+  mutate(h_adh_pay = as.numeric(h_adh_pay)) %>%
+  summarize(mean_h_adh_pay = round(mean(h_adh_pay, na.rm = TRUE) * 100, 1)) #only 3 obs for diabetes
+
+#h_adh_refill: Missed dose in past 2 weeks - Why did you miss one or more doses over the past 2 weeks? It is hard to get my refill on time
+h_adh_refill <- indiv_htn %>%
+  group_by(assign_n) %>%
+  mutate(h_adh_refill = as.numeric(h_adh_refill)) %>%
+  summarize(mean_h_adh_refill = round(mean(h_adh_refill, na.rm = TRUE) * 100, 1))
+
+dm_adh_refilly <- indiv_dm %>%
+ # group_by(assign_n) %>%
+  mutate(dm_adh_refill = as.numeric(dm_adh_refill)) %>%
+  summarize(mean_dm_adh_refill = round(mean(dm_adh_refill, na.rm = TRUE) * 100, 1)) # only one obs.
+
+# Missed dose in past 2 weeks - Why did you miss one or more doses over the past 2 weeks? Drugs were not available at all
+h_adh_avail <- indiv_htn %>%
+  group_by(assign_n) %>%
+  mutate(h_adh_avail = as.numeric(h_adh_avail)) %>%
+  summarize(mean_h_adh_avail = round(mean(h_adh_avail, na.rm = TRUE) * 100, 1))
+
+dm_adh_avail <- indiv_dm %>%
+  group_by(assign_n) %>%
+  mutate(dm_adh_avail = as.numeric(dm_adh_avail)) %>%
+  summarize(mean_dm_adh_avail = round(mean(dm_adh_avail, na.rm = TRUE) * 100, 1)) # only one obs.
+
+
+
+
+
+```
+
+```{r diagnosis in past 12 m}
+
+#hbp5: You said before that you have been told by a doctor or healthcare worker that you have high blood pressure/hypertension. Have you been told for the first time in the past 12 months? 
+
+diagn.htn <- indiv_htn %>%
+  group_by(assign_n) %>%
+  mutate(hbp5n = as.numeric(hbp5n)) %>%
+  summarize(mean_diagn_htn = round(mean(hbp5n, na.rm = TRUE) * 100, 1))
+
+diagn.dm <- indiv_dm %>%
+  group_by(assign_n) %>%
+  mutate(hd7an = as.numeric(hd7an)) %>%
+  summarize(mean_diagn_dm = round(mean(hd7an, na.rm = TRUE) * 100, 1))
+
+```
+
+```{r follow-up}
+
+#hbp13: In the past 12 months, did you miss any or stop going to the follow up visits for high blood pressure / hypertension care and if yes why?
+
+doctorvisit.htn <- indiv_htn %>%
+  mutate(hbp13n = if_else(hbp13 == 14, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(hbp13n = as.numeric(hbp13n)) %>%
+  summarize(mean_doctorvisit_htn = round(mean(hbp13n, na.rm = TRUE) * 100, 1))
+
+
+doctorvisit.dm <- indiv_dm %>%
+  mutate(hd15n = if_else(hd15 == 14, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(hd15n = as.numeric(hd15n)) %>%
+  summarize(mean_doctorvisit_dm = round(mean(hd15n, na.rm = TRUE) * 100, 1))
+
+#hbp14: What were the reasons for stopping to go to the follow up visits for high blood pressure / hypertension care?
+
+followup.htn <- indiv_htn %>%
+  mutate(hbp14n = if_else(hbp14 == 14, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(hbp14n = as.numeric(hbp14n)) %>%
+  summarize(mean_followup_htn = round(mean(hbp14n, na.rm = TRUE) * 100, 1))
+
+
+followup.dm <- indiv_dm %>%
+  mutate(hd16n = if_else(hd16 == 14, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(hd16n = as.numeric(hd16n)) %>%
+  summarize(mean_followup_dm = round(mean(hd16n, na.rm = TRUE) * 100, 1))
+
+```
+
+```{r DSD and CDP participation}
+
+#hftc3: Over the past 12 months, how many times did you go to such a group meeting?
+
+hftcn.htn <- indiv_htn %>%
+  group_by(assign_n) %>%
+  mutate(hftc3 = as.numeric(hftc3)) %>%
+  summarize(mean_hftcn_htn = round(mean(hftc3, na.rm = TRUE), 1))
+
+
+hftcn.dm <- indiv_dm %>%
+  group_by(assign_n) %>%
+  mutate(dftc3 = as.numeric(dftc3)) %>%
+  summarize(mean_hftcn_dm = round(mean(dftc3, na.rm = TRUE), 1))
+
+#hcag3: Over the past 12 months, how many times did you meet with your group?
+
+hcag.htn <- indiv_htn %>%
+  group_by(assign_n) %>%
+  mutate(hcag3 = as.numeric(hcag3)) %>%
+  summarize(mean_hcag_htn = round(mean(hcag3, na.rm = TRUE), 1))
+
+
+hcag.dm <- indiv_dm %>%
+  group_by(assign_n) %>%
+  mutate(dcag3 = as.numeric(dcag3)) %>%
+  summarize(mean_hcag_dm = round(mean(dcag3, na.rm = TRUE), 1))
+
+#hft3: Over the past 12 months, how often did you go to the facility for care for raised blood pressure or hypertension with preferential treatment?
+
+hft.htn <- indiv_htn %>%
+  group_by(assign_n) %>%
+  mutate(hft3 = as.numeric(hft3)) %>%
+  summarize(mean_hft_htn = round(mean(hft3, na.rm = TRUE), 1))
+
+
+hft.dm <- indiv_dm %>%
+  group_by(assign_n) %>%
+  mutate(dft3 = as.numeric(dft3)) %>%
+  summarize(mean_hft_dm = round(mean(dft3, na.rm = TRUE), 1))
+
+#hftc7: In the past 12 months, did you miss any group meetings and if yes why? Did not miss meeting
+
+nomiss.htn <- indiv_htn %>%
+  mutate(hftc7n = if_else(hftc7 == 8, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(hftc7n = as.numeric(hftc7n)) %>%
+  summarize(mean_nomiss_htn = round(mean(hftc7n, na.rm = TRUE) * 100, 1))
+
+
+nomiss.dm <- indiv_dm %>%
+  mutate(dftc7 = if_else(dftc7 == 8, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(hd16n = as.numeric(dftc7)) %>%
+  summarize(mean_nomiss_dm = round(mean(dftc7, na.rm = TRUE) * 100, 1))
+
+#hftc7: In the past 12 months, did you miss any group meetings and if yes why? no meds available
+
+nomeds.htn <- indiv_htn %>%
+  mutate(hftc7n = if_else(hftc7 == 7, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(hftc7n = as.numeric(hftc7n)) %>%
+  summarize(mean_nomeds_htn = round(mean(hftc7n, na.rm = TRUE) * 100, 1))
+
+
+nomeds.dm <- indiv_dm %>%
+  mutate(dftc7 = if_else(dftc7 == 7, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(hd16n = as.numeric(dftc7)) %>%
+  summarize(mean_nomeds_dm = round(mean(dftc7, na.rm = TRUE) * 100, 1))
+
+
+#hcag11: In the past 12 months, did you miss any group meetings and if yes why? NO miss
+
+hcagnomiss.htn <- indiv_htn %>%
+  mutate(hcag11n = if_else(hcag11 == 8, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(hcag11n = as.numeric(hcag11n)) %>%
+  summarize(mean_hcagnomiss_htn = round(mean(hcag11n, na.rm = TRUE) * 100, 1))
+
+hcagnomiss.dm <- indiv_dm %>%
+  mutate(dcag11n = if_else(dcag11 == 8, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(hd16n = as.numeric(dcag11n)) %>%
+  summarize(mean_hcagnomiss_dm = round(mean(dcag11n, na.rm = TRUE) * 100, 1))
+
+#hcag11: In the past 12 months, did you miss any group meetings and if yes why? No meds aviable
+
+hcagmiss.htn <- indiv_htn %>%
+  mutate(hcag11n = if_else(hcag11 == 7, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(hcag11n = as.numeric(hcag11n)) %>%
+  summarize(mean_hcagmiss_htn = round(mean(hcag11n, na.rm = TRUE) * 100, 1))
+
+hcagmiss.dm <- indiv_dm %>%
+  mutate(dcag11n = if_else(dcag11 == 7, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(hd16n = as.numeric(dcag11n)) %>%
+  summarize(mean_hcagmiss_dm = round(mean(dcag11n, na.rm = TRUE) * 100, 1))
+
+
+
+
+```
+
+```{r referral}
+
+#hcdp4: Over the past 12 months, did the health personnel at the outreach session refer you to the clinic or hospital for a formal check-up or treatment initiation because of raised blood pressure or hypertension? And if yes, was it for a check-up or treatment initiation or both?
+
+hcdp4.htn <- indiv_htn %>%
+  mutate(hcdp4n = if_else(hcdp4 == 2 | hcdp4 == 1, 1, 0)) %>%
+ #group_by(assign_n) %>%
+  mutate(hcdp4n = as.numeric(hcdp4n)) %>%
+  summarize(mean_hcdp4_htn = round(mean(hcdp4n, na.rm = TRUE) * 100, 1))
+
+dcdp4.dm <- indiv_dm %>%
+  mutate(dcdp4n = if_else(dcdp4 == 2 | dcdp4 == 1, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(dcdp4n = as.numeric(dcdp4n)) %>%
+  summarize(mean_dcdp4_dm = round(mean(dcdp4n, na.rm = TRUE) * 100, 1))
+
+
+```
+
+```{r drug availability}
+
+#chm2: Why did you miss one or more doses over the past 2 weeks? drugs unavailable 
+
+chm2unav.htn <- indiv_htn %>%
+  mutate(chm2 = if_else(chm2 == 1, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(chm2 = as.numeric(chm2)) %>%
+  summarize(mean_chm2unav_htn = round(mean(chm2, na.rm = TRUE) * 100, 1))
+
+chm2unav.dm <- indiv_dm %>%
+  mutate(cdm2 = if_else(cdm2 == 1, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(cdm2 = as.numeric(cdm2)) %>%
+  summarize(mean_chm2unav_dm = round(mean(cdm2, na.rm = TRUE) * 100, 1))
+
+#chm2: Why did you miss one or more doses over the past 2 weeks? drugs available but not for free
+
+chm2.htn <- indiv_htn %>%
+  mutate(chm2 = if_else(chm2 == 2, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(chm2 = as.numeric(chm2)) %>%
+  summarize(mean_chm2_htn = round(mean(chm2, na.rm = TRUE) * 100, 1))
+
+chm2.dm <- indiv_dm %>%
+  mutate(cdm2 = if_else(cdm2 == 2, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(cdm2 = as.numeric(cdm2)) %>%
+  summarize(mean_chm2_dm = round(mean(cdm2, na.rm = TRUE) * 100, 1))
+
+#chm3: Of the past 12 months, for how many months did you obtain hypertension drugs?
+
+drugm.htn <- indiv_htn %>%
+  group_by(assign_n) %>%
+  mutate(chm3 = as.numeric(chm3)) %>%
+  summarize(mean_drugm_htn = round(mean(chm3, na.rm = TRUE), 1))
+
+
+drugm.dm <- indiv_dm %>%
+  group_by(assign_n) %>%
+  mutate(cdm3 = as.numeric(cdm3)) %>%
+  summarize(mean_drugm_dm = round(mean(cdm3, na.rm = TRUE), 1))
+
+```
+
+```{r RHM visits}
+
+#rhm2: In the past 12 months, has a Rural Health Motivator visited you?
+
+rhm.htn <- indiv_htn %>%
+ # group_by(assign_n) %>%
+  mutate(rhm2n = as.numeric(rhm2n)) %>%
+  summarize(mean_rhm_htn = round(mean(rhm2n, na.rm = TRUE) * 100, 1))
+
+rhm.dm <- indiv_dm %>%
+  group_by(assign_n) %>%
+  mutate(rhm2n = as.numeric(rhm2n)) %>%
+  summarize(mean_rhm_dm = round(mean(rhm2n, na.rm = TRUE) * 100, 1))
+
+#rhm4: Which services did you receive from the Rural Health Motivator during the last visit?
+
+rhm4.htn <- indiv_htn %>%
+  mutate(rhm4 = if_else(rhm4 == 12 | rhm4 == 13 | rhm4 == 14 | rhm4 == 15| rhm4 == 16 | rhm4 == 17 | rhm4 == 18 | rhm4 == 1, 1, 0)) %>%
+ # group_by(assign_n) %>%
+  mutate(rhm4 = as.numeric(rhm4)) %>%
+  summarize(mean_rhm4_htn = round(mean(rhm4, na.rm = TRUE) * 100, 1))
+
+rhm4.dm <- indiv_dm %>%
+  mutate(rhm4 = if_else(rhm4 == 12 | rhm4 == 13 | rhm4 == 14 | rhm4 == 15| rhm4 == 16 | rhm4 == 17 | rhm4 == 18 | rhm4 == 1, 1, 0)) %>%
+ # group_by(assign_n) %>%
+  mutate(rhm4 = as.numeric(rhm4)) %>%
+  summarize(mean_rhm4_dm = round(mean(rhm4, na.rm = TRUE) * 100, 1))
+
+#rhm4: Which services did you receive from the Rural Health Motivator during the last visit? Referral
+rhm4.htn <- indiv_htn %>%
+  mutate(rhm4 = if_else(rhm4 == 17, 1, 0)) %>%
+ # group_by(assign_n) %>%
+  mutate(rhm4 = as.numeric(rhm4)) %>%
+  summarize(mean_rhm4_htn = round(mean(rhm4, na.rm = TRUE) * 100, 1))
+
+rhm4.dm <- indiv_dm %>%
+  mutate(rhm4 = if_else(rhm4 == 17, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(rhm4 = as.numeric(rhm4)) %>%
+  summarize(mean_rhm4_dm = round(mean(rhm4, na.rm = TRUE) * 100, 1))
+
+#rhm10: What was the reason for advising you to visit a health care facility?
+
+rhm10.htn <- indiv_htn %>%
+  mutate(rhm10 = if_else(rhm10 == 2 | rhm10 == 3 | rhm10 == 7 | rhm10 == 8, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(rhm10 = as.numeric(rhm10)) %>%
+  summarize(mean_rhm4_htn = round(mean(rhm10, na.rm = TRUE) * 100, 1))
+
+rhm10.dm <- indiv_dm %>%
+  mutate(rhm10 = if_else(rhm10 == 2 | rhm10 == 3 | rhm10 == 7 | rhm10 == 8, 1, 0)) %>%
+  group_by(assign_n) %>%
+  mutate(rhm10 = as.numeric(rhm10)) %>%
+  summarize(mean_rhm4_dm = round(mean(rhm10, na.rm = TRUE) * 100, 1))
+
+### RHM services
+
+#RHM_serv_scdmh
+rhm.htn.RHM_serv_scdmh <- indiv_htn %>%
+  #group_by(assign_n) %>%
+  mutate(RHM_serv_scdmh = as.numeric(RHM_serv_scdmh)) %>%
+  summarize(mean_rhm_htn = round(mean(RHM_serv_scdmh, na.rm = TRUE) * 100, 1))
+
+rhm.RHM_serv_scdmh <- indiv_dm %>%
+  group_by(assign_n) %>%
+  mutate(RHM_serv_scdmh = as.numeric(RHM_serv_scdmh)) %>%
+  summarize(mean_RHM_serv_scdmh_dm = round(mean(RHM_serv_scdmh, na.rm = TRUE) * 100, 1))
+
+#RHM_serv_rcheck
+rhm.htn.RHM_serv_rcheck <- indiv_htn %>%
+  group_by(assign_n) %>%
+  mutate(RHM_serv_rcheck = as.numeric(RHM_serv_rcheck)) %>%
+  summarize(mean_rhm_htn = round(mean(RHM_serv_rcheck, na.rm = TRUE) * 100, 1))
+
+rhm.RHM_serv_rcheck <- indiv_dm %>%
+  group_by(assign_n) %>%
+  mutate(RHM_serv_rcheck = as.numeric(RHM_serv_rcheck)) %>%
+  summarize(mean_RHM_serv_rcheck = round(mean(RHM_serv_rcheck, na.rm = TRUE) * 100, 1))
+
+
+```
+
+
