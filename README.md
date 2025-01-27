@@ -1,12 +1,14 @@
-Code for the paper "Decentralizing health services for diabetes and hypertension in Eswatini: Findings from the nationwide cluster-randomized controlled WHO-PEN@scale trial"
+Code for the paper:
+"Decentralizing Health Services for Diabetes and Hypertension in Eswatini: Findings from the Nationwide Cluster-Randomized Controlled WHO-PEN@Scale Trial"
 
-This study includes data from the nationwide household survey of the WHO-PEN@scale project (https://whopenatscale.com/). The study protocol for this trial is available here: https://ntnuopen.ntnu.no/ntnu-xmlui/bitstream/handle/11250/3097328/Theilmann.pdf?sequence=2&isAllowed=y
+This repository contains code and resources related to the WHO-PEN@Scale project, a nationwide cluster-randomized controlled trial in Eswatini. The study utilized data from a nationwide household survey conducted as part of the WHO-PEN@Scale initiative (https://whopenatscale.com/).
 
-Data cleaning was done in STATA, data management and analysis was done in R version 4.1.2 (2021-11-01).
+The full study protocol for this trial is available here.
 
-A sub-dataset to run the provided code can be found in folder named 'data'. The code for cleaning and data analysis and the codebook can be found in folder named 'code'. 
+    Data Cleaning: Performed using STATA.
+    Data Management and Analysis: Conducted in R (version 4.1.2, released 2021-11-01).
 
-
+A sample dataset required to run the provided code can be found in the folder named 'data'. The code for data cleaning and analysis, along with the corresponding codebook, is located in the folder named 'code'.
 
 ### Example Code
 ```R
